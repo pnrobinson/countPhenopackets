@@ -7,9 +7,7 @@ import org.monarchinitiative.phenol.io.OntologyLoader;
 import org.monarchinitiative.phenol.io.obo.hpo.HpoDiseaseAnnotationParser;
 import org.monarchinitiative.phenol.ontology.data.Ontology;
 import org.monarchinitiative.phenol.ontology.data.TermId;
-import org.phenopackets.schema.v1.core.Disease;
-import org.phenopackets.schema.v1.core.Gene;
-import org.phenopackets.schema.v1.core.OntologyClass;
+import org.phenopackets.schema.v1.core.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,31 +16,36 @@ import java.util.*;
 
 import static org.monarchinitiative.phenol.formats.hpo.HpoModeOfInheritanceTermIds.*;
 
-public class CountPhenoP {
+class CountPhenoP {
     private static final Logger logger = LoggerFactory.getLogger(CountPhenoP.class);
-    private String phenopacketDirectoryPath;
+    private final String phenopacketDirectoryPath;
     private List<File> phenopacketFiles;
-    private Ontology ontology;
-    private Map<TermId, HpoDisease> diseaseMap;
+    private final Ontology ontology;
+    private final Map<TermId, HpoDisease> diseaseMap;
 
-    private Map<TermId, Integer> disease2count = new HashMap<>();
+    private final Map<TermId, Integer> disease2count = new HashMap<>();
 
-    private Map<TermId, Integer> hpo2count = new HashMap<>();
+    private final Map<TermId, Integer> hpo2count = new HashMap<>();
 
-    private Set<String> genes = new HashSet<>();
+    private final Set<String> genes = new HashSet<>();
 
-    private DescriptiveStatistics termsPerPhenopacket = new DescriptiveStatistics();
-    private DescriptiveStatistics negatedTermsPerPhenopacket = new DescriptiveStatistics();
+    private final DescriptiveStatistics termsPerPhenopacket = new DescriptiveStatistics();
+    private final DescriptiveStatistics negatedTermsPerPhenopacket = new DescriptiveStatistics();
 
-    double medianCountPerDisease;
-    double maxCountPerDiseases;
-    int n_recessive =0;
-    int n_dominant = 0;
-    int n_xchromosomal = 0;
-    int n_heterogeneous = 0;
-    int n_somatic = 0;
-    int n_sporadic = 0;
-    int n_somatic_mosaic = 0;
+    private final static String HOMOZYGOUS = "GENO:0000136";
+    private final static String HETEROZYGOUS = "GENO:0000135";
+    private final static String HEMIZYGOUS = "GENO:0000134";
+
+    private double medianCountPerDisease;
+    private double maxCountPerDiseases;
+    private int n_recessive =0;
+    private int n_dominant = 0;
+    private int n_xchromosomal = 0;
+    private int n_heterogeneous = 0;
+    private int n_somatic = 0;
+    private int n_sporadic = 0;
+    private int n_somatic_mosaic = 0;
+    private int n_multiple = 0;
 
 
     public static void main(String []args) throws IOException {
@@ -61,7 +64,7 @@ public class CountPhenoP {
 
 
 
-    public CountPhenoP(String hpoPath, String ppacketDirPath, String phenotypeAnnotationPath) {
+    private CountPhenoP(String hpoPath, String ppacketDirPath, String phenotypeAnnotationPath) {
         this.ontology = OntologyLoader.loadOntology(new File(hpoPath));
         diseaseMap = HpoDiseaseAnnotationParser.loadDiseaseMap(phenotypeAnnotationPath,ontology);
         this.phenopacketDirectoryPath = ppacketDirPath;
@@ -97,10 +100,14 @@ public class CountPhenoP {
             System.out.println("Could not find inheritance term for " + hpod.getName());
             return;
         }
+        if (inheritance.size() > 1) {
+            n_multiple++;
+            return;
+        }
         for (TermId id : inheritance) {
-            if (id.equals(AUTOSOMAL_RECESSIVE)) {
+            if (id.equals(AUTOSOMAL_RECESSIVE) ) {
                 n_recessive++;
-            } else if (id.equals(AUTOSOMAL_DOMINANT) || id.equals(CONTIGUOUS_GENE_SYNDROME_AUTOSOMAL_DOMINANT)) {
+            } else if ( (id.equals(AUTOSOMAL_DOMINANT) ||  id.equals(CONTIGUOUS_GENE_SYNDROME_AUTOSOMAL_DOMINANT)) ) {
                 n_dominant++;
             } else if (id.equals(X_LINKED) || id.equals(X_LINKED_RECESSIVE) || id.equals(X_LINKED_DOMINANT)) {
                 n_xchromosomal++;
@@ -113,7 +120,7 @@ public class CountPhenoP {
             }  else if (id.equals(SOMATIC_MOSAICISM)) {
                 n_somatic_mosaic++;
             }  else{
-                System.out.println("Could not identify id " + id.getValue());
+                System.out.println("Could not identify id " + id.getValue() + " for disease " + d.toString());
                 System.exit(0);
             }
         }
@@ -121,7 +128,7 @@ public class CountPhenoP {
     }
 
 
-    public void printStats(Writer writer) {
+    private void printStats(Writer writer) {
         System.out.printf("Number of diseases: %d (median %f, max %f)\n", this.disease2count.size(), medianCountPerDisease,maxCountPerDiseases);
         System.out.printf("Autosomal recessive: %d\n", this.n_recessive);
         System.out.printf("Autosomal dominant: %d\n", this.n_dominant);
@@ -130,6 +137,7 @@ public class CountPhenoP {
         System.out.printf("somatic: %d\n", this.n_somatic);
         System.out.printf("somatic mosaic: %d\n", this.n_somatic_mosaic);
         System.out.printf("sporadic: %d\n", this.n_somatic);
+        System.out.printf("multiple MoI: %d\n", this.n_multiple);
         System.out.printf("Number of genes: %d\n", genes.size());
         System.out.printf("Total number of HPO terms used in phenopackets: %d\n", this.hpo2count.size());
         int mn = 0;
@@ -148,9 +156,12 @@ public class CountPhenoP {
     }
 
 
-    public void writeLongTable(Writer writer) throws IOException {
-        writer.write("\\begin{longtable}{|l|r|r|r|l|}\n" +
-                "\\caption{Phenopackets analyzed in this work}\\\\\n" +
+
+
+
+    private void writeLongTable(Writer writer) throws IOException {
+        writer.write("\\begin{longtable}{|p{8cm}|p{2cm}|p{2cm}|p{1cm}|l|}\n" +
+                "\\caption{Phenopackets analyzed in this work}  \\label{table:phenopackets} \\\\\n" +
                 "\\hline\n" +
                 "\\textbf{Disease} & \\textbf{Gene} & \\textbf{Proband} & \\textbf{n. HPO terms}& \\textbf{Publication} \\\\\n" +
                 "\\hline\n" +
@@ -164,14 +175,14 @@ public class CountPhenoP {
                 "\\hline \\multicolumn{5}{r}{\\textit{Continued on next page}} \\\\\n" +
                 "\\endfoot\n" +
                 "\\hline\n" +
-                "\\endlastfoot");
+                "\\endlastfoot \n");
     }
 
-    static String convert(String str)
+    private static String convert(String str)
     {
 
         // Create a char array of given String
-        char ch[] = str.toCharArray();
+        char[] ch = str.toCharArray();
         for (int i = 0; i < str.length(); i++) {
 
             // If first character of a word is found
@@ -195,19 +206,39 @@ public class CountPhenoP {
         }
 
         // Convert the char array to equivalent String
-        String st = new String(ch);
-        return st;
+        return new String(ch);
+    }
+
+    private int getPathogenicAlleleCount(List<Variant> vars) {
+        int n = 0;
+        for (Variant v : vars) {
+            OntologyClass oc = v.getZygosity();
+            if (oc.getId().equals(HOMOZYGOUS)) {
+                n += 2;
+            } else if (oc.getId().equals(HETEROZYGOUS)) {
+                n += 1;
+            } else if (oc.getId().equals(HEMIZYGOUS)) {
+                n += 1;
+            } else {
+                throw new RuntimeException("Could not identify genotype: " + oc.toString());
+            }
+        }
+        return n;
     }
 
     // disease, gene, proband, hpoterms, pub.
-    public void getStats(Writer writer)   throws IOException {
+    private void getStats(Writer writer)   throws IOException {
         for (java.io.File file: this.phenopacketFiles) {
             if (! file.exists()) {
                 throw new RuntimeException("Could not find phenopacket file at " + file.getAbsolutePath());
             }
             PhenopacketImporter importer = PhenopacketImporter.fromJson(file.getAbsolutePath(), this.ontology);
             Disease disease = importer.getDiagnosis();
+            List<Variant> vars = importer.getVariantList();
+           // int n_path_alleles = getPathogenicAlleleCount(vars);
             recordDiagnosis(disease);
+
+
             List<TermId> ids = importer.getHpoTerms();
             List<TermId> negated = importer.getNegatedHpoTerms();
             recordPhenotypes(ids,negated);
@@ -220,8 +251,9 @@ public class CountPhenoP {
             }
             diseaseName = convert(diseaseName);
             diseaseName = diseaseName.replace("Syndrome", "syndrome");
+            String samplename =  importer.getSamplename().replaceAll("_", "-");
             writer.write(String.format("%s & %s & %s & %d & %s\\\\ \n",diseaseName,
-                    g.getSymbol(), importer.getSamplename(),(ids.size() + negated.size()),
+                    g.getSymbol(),samplename,(ids.size() + negated.size()),
                     importer.getPMID()));
         }
 
