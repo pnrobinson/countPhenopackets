@@ -172,6 +172,13 @@ public class PhenopacketImporter {
         return phenoPacket.getDiseases(0);
     }
 
+    //"id": "PMID:27023906-Alazami-2016-ATP6V1E1-Family_5_-_IV:2",
+    public String getPMID() {
+        String id = phenoPacket.getId();
+        int i = id.indexOf("-");
+        if (i<0) return id;
+        return id.substring(0,i);
+    }
 
     public boolean qcPhenopacket() {
         if (phenoPacket.getDiseasesCount() != 1) {

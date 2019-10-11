@@ -8,11 +8,12 @@ import org.monarchinitiative.phenol.io.obo.hpo.HpoDiseaseAnnotationParser;
 import org.monarchinitiative.phenol.ontology.data.Ontology;
 import org.monarchinitiative.phenol.ontology.data.TermId;
 import org.phenopackets.schema.v1.core.Disease;
+import org.phenopackets.schema.v1.core.Gene;
 import org.phenopackets.schema.v1.core.OntologyClass;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
+import java.io.*;
 import java.util.*;
 
 import static org.monarchinitiative.phenol.formats.hpo.HpoModeOfInheritanceTermIds.*;
@@ -26,6 +27,13 @@ public class CountPhenoP {
 
     private Map<TermId, Integer> disease2count = new HashMap<>();
 
+    private Map<TermId, Integer> hpo2count = new HashMap<>();
+
+    private Set<String> genes = new HashSet<>();
+
+    private DescriptiveStatistics termsPerPhenopacket = new DescriptiveStatistics();
+    private DescriptiveStatistics negatedTermsPerPhenopacket = new DescriptiveStatistics();
+
     double medianCountPerDisease;
     double maxCountPerDiseases;
     int n_recessive =0;
@@ -36,13 +44,19 @@ public class CountPhenoP {
     int n_sporadic = 0;
     int n_somatic_mosaic = 0;
 
-    public static void main(String []args) {
+
+    public static void main(String []args) throws IOException {
         String hpPath = "/home/robinp/IdeaProjects/LIRICAL/data/hp.obo";
         String ppacketDir = "/home/robinp/Desktop/ppacket";
         String phenotypeAnnotationPath = "/home/robinp/IdeaProjects/LIRICAL/data/phenotype.hpoa";
         CountPhenoP cpp = new CountPhenoP(hpPath,ppacketDir, phenotypeAnnotationPath);
-        cpp.getStats();
-        cpp.printStats();
+        BufferedWriter writer = new BufferedWriter(new FileWriter("phenopacketstats.tex"));
+        cpp.writeLongTable(writer);
+        cpp.getStats(writer);
+        cpp.printStats(writer);
+
+        writer.write("\\end{longtable}\n");
+        writer.close();
     }
 
 
@@ -54,6 +68,19 @@ public class CountPhenoP {
         getListOfPhenopacketFiles();
     }
 
+
+    private void recordPhenotypes(List<TermId> ids, List<TermId> negated) {
+        termsPerPhenopacket.addValue(ids.size());
+        negatedTermsPerPhenopacket.addValue(negated.size());
+        for (TermId tid : ids) {
+            this.hpo2count.putIfAbsent(tid,0);
+            this.hpo2count.put(tid,this.hpo2count.get(tid));
+        }
+        for (TermId tid : negated) {
+            this.hpo2count.putIfAbsent(tid,0);
+            this.hpo2count.put(tid,1+this.hpo2count.get(tid));
+        }
+    }
 
     private void recordDiagnosis(Disease d) {
         OntologyClass oc = d.getTerm();
@@ -94,7 +121,7 @@ public class CountPhenoP {
     }
 
 
-    public void printStats() {
+    public void printStats(Writer writer) {
         System.out.printf("Number of diseases: %d (median %f, max %f)\n", this.disease2count.size(), medianCountPerDisease,maxCountPerDiseases);
         System.out.printf("Autosomal recessive: %d\n", this.n_recessive);
         System.out.printf("Autosomal dominant: %d\n", this.n_dominant);
@@ -103,19 +130,99 @@ public class CountPhenoP {
         System.out.printf("somatic: %d\n", this.n_somatic);
         System.out.printf("somatic mosaic: %d\n", this.n_somatic_mosaic);
         System.out.printf("sporadic: %d\n", this.n_somatic);
+        System.out.printf("Number of genes: %d\n", genes.size());
+        System.out.printf("Total number of HPO terms used in phenopackets: %d\n", this.hpo2count.size());
+        int mn = 0;
+        for (Integer i : this.hpo2count.values()) {
+            mn += i;
+        }
+        System.out.printf("Mean number of times each HPO term was used: %.2f\n", (double)mn/this.hpo2count.size());
+        int medianNegated = (int)negatedTermsPerPhenopacket.getPercentile(50.0);
+        double meanNegated = negatedTermsPerPhenopacket.getMean();
+        int maxNegated = (int)negatedTermsPerPhenopacket.getMax();
+        System.out.printf("Mean negated %f, median %d max %d\n",meanNegated, medianNegated,maxNegated);
+        int median = (int)termsPerPhenopacket.getPercentile(50.0);
+        double mean = termsPerPhenopacket.getMean();
+        int max = (int)negatedTermsPerPhenopacket.getMax();
+        System.out.printf("Mean  %f, median %d max %d\n",mean, median,max);
     }
 
 
-    public void getStats() {
+    public void writeLongTable(Writer writer) throws IOException {
+        writer.write("\\begin{longtable}{|l|r|r|r|l|}\n" +
+                "\\caption{Phenopackets analyzed in this work}\\\\\n" +
+                "\\hline\n" +
+                "\\textbf{Disease} & \\textbf{Gene} & \\textbf{Proband} & \\textbf{n. HPO terms}& \\textbf{Publication} \\\\\n" +
+                "\\hline\n" +
+                "\\endfirsthead\n" +
+                "\\multicolumn{5}{c}%\n" +
+                "{\\tablename\\ \\thetable\\ -- \\textit{Continued from previous page}} \\\\\n" +
+                "\\hline\n" +
+                "\\textbf{Disease} & \\textbf{Gene} & \\textbf{Proband} & \\textbf{n. HPO terms}& \\textbf{Publication} \\\\\n" +
+                "\\hline\n" +
+                "\\endhead\n" +
+                "\\hline \\multicolumn{5}{r}{\\textit{Continued on next page}} \\\\\n" +
+                "\\endfoot\n" +
+                "\\hline\n" +
+                "\\endlastfoot");
+    }
+
+    static String convert(String str)
+    {
+
+        // Create a char array of given String
+        char ch[] = str.toCharArray();
+        for (int i = 0; i < str.length(); i++) {
+
+            // If first character of a word is found
+            if (i == 0 && ch[i] != ' ' ||
+                    ch[i] != ' ' && (ch[i - 1] == ' ' || ch[i-1] == '-')) {
+
+                // If it is in lower-case
+                if (ch[i] >= 'a' && ch[i] <= 'z') {
+
+                    // Convert into Upper-case
+                    ch[i] = (char)(ch[i] - 'a' + 'A');
+                }
+            }
+
+            // If apart from first character
+            // Any one is in Upper-case
+            else if (ch[i] >= 'A' && ch[i] <= 'Z')
+
+                // Convert into Lower-Case
+                ch[i] = (char)(ch[i] + 'a' - 'A');
+        }
+
+        // Convert the char array to equivalent String
+        String st = new String(ch);
+        return st;
+    }
+
+    // disease, gene, proband, hpoterms, pub.
+    public void getStats(Writer writer)   throws IOException {
         for (java.io.File file: this.phenopacketFiles) {
-            String phenopacketAbsolutePath = file.getAbsolutePath();
-            //File f = new File(file);
             if (! file.exists()) {
                 throw new RuntimeException("Could not find phenopacket file at " + file.getAbsolutePath());
             }
             PhenopacketImporter importer = PhenopacketImporter.fromJson(file.getAbsolutePath(), this.ontology);
             Disease disease = importer.getDiagnosis();
             recordDiagnosis(disease);
+            List<TermId> ids = importer.getHpoTerms();
+            List<TermId> negated = importer.getNegatedHpoTerms();
+            recordPhenotypes(ids,negated);
+            Gene g = importer.getGene();
+            genes.add(g.getId());
+            String diseaseName = disease.getTerm().getLabel();
+            int i = diseaseName.indexOf(";");
+            if (i>0) {
+                diseaseName = diseaseName.substring(0,i);
+            }
+            diseaseName = convert(diseaseName);
+            diseaseName = diseaseName.replace("Syndrome", "syndrome");
+            writer.write(String.format("%s & %s & %s & %d & %s\\\\ \n",diseaseName,
+                    g.getSymbol(), importer.getSamplename(),(ids.size() + negated.size()),
+                    importer.getPMID()));
         }
 
         DescriptiveStatistics stats = new DescriptiveStatistics();
